@@ -1,0 +1,59 @@
+data <-read.csv("file_1.csv")
+library(caret)
+library(MASS)
+library(PRROC)
+data$Attrition <- as.factor(data$Attrition)
+# Convert categorical variables to factors
+categorical_vars <- c("BusinessTravel", "Department","Age.Groups", "Distance", "EducationField", "Gender", "JobRole", "MaritalStatus","Rate.of.Promotion..Category.","OverTime", "Company.Tenure.Category" ,"Years.with.Manager_Category","Role.tenure.Category")
+data[, categorical_vars] <- lapply(data[, categorical_vars], as.factor)
+library(pROC)
+
+set.seed(123)
+n <- nrow(data)
+folds <- cut(seq(1, n), breaks = 5, labels = FALSE)
+
+# Initialize a data frame to store the results
+results <- data.frame(Fold = integer(), Precision = numeric(), Recall = numeric(), Accuracy = numeric())
+
+# Initialize a list to store ROC curve data and confusion matrices for each fold
+roc_curves <- list()
+confusion_matrices <- list()
+
+for (i in 1:5) {
+  test <- data[folds == i, ]
+  train <- data[folds != i, ]
+  
+  # Fit the model
+  K_model <- glm(Attrition ~ ., data = train, family = "binomial")
+  step_k_model <- stepAIC(K_model, direction = "backward")
+  
+  # Make predictions
+  predictions <- predict(step_k_model, newdata = test, type = "response")
+  
+  # Calculate ROC and find optimal threshold
+  roc_obj <- roc(test$Attrition, predictions)
+  coords <- coords(roc_obj, "best", ret="threshold")
+  optimal_threshold <- coords$threshold
+  
+  # Classify based on optimal threshold
+  pred_class <- ifelse(predictions > optimal_threshold, 1, 0)
+  
+  # Calculate metrics and store the confusion matrix
+  confusion_matrix <- table(test$Attrition, pred_class)
+  confusion_matrices[[i]] <- confusion_matrix
+  precision <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+  recall <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  
+  # Store the results
+  results <- rbind(results, data.frame(Fold = i, Precision = precision, Recall = recall, Accuracy = accuracy))
+  
+  roc_curve <- roc.curve(scores.class0 = predictions, weights.class0 = as.numeric(test$Attrition)-1, curve = TRUE)
+  roc_curves[[i]] <- roc_curve
+  # Plot ROC curve for this fold
+  plot(roc_curve, main = paste("ROC Curve - Fold", i))
+}
+
+# View results and confusion matrices
+print(results)
+print(confusion_matrices)
